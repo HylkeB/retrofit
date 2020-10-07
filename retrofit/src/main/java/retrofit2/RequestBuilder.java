@@ -28,7 +28,7 @@ import okhttp3.RequestBody;
 import okio.Buffer;
 import okio.BufferedSink;
 
-final class RequestBuilder {
+public final class RequestBuilder {
   private static final char[] HEX_DIGITS = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
   };
@@ -96,11 +96,11 @@ final class RequestBuilder {
     }
   }
 
-  void setRelativeUrl(Object relativeUrl) {
+  public void setRelativeUrl(Object relativeUrl) {
     this.relativeUrl = relativeUrl.toString();
   }
 
-  void addHeader(String name, String value) {
+  public void addHeader(String name, String value) {
     if ("Content-Type".equalsIgnoreCase(name)) {
       try {
         contentType = MediaType.get(value);
@@ -112,11 +112,11 @@ final class RequestBuilder {
     }
   }
 
-  void addHeaders(Headers headers) {
+  public void addHeaders(Headers headers) {
     headersBuilder.addAll(headers);
   }
 
-  void addPathParam(String name, String value, boolean encoded) {
+  public void addPathParam(String name, String value, boolean encoded) {
     if (relativeUrl == null) {
       // The relative URL is cleared when the first query parameter is set.
       throw new AssertionError();
@@ -181,7 +181,7 @@ final class RequestBuilder {
     }
   }
 
-  void addQueryParam(String name, @Nullable String value, boolean encoded) {
+  public void addQueryParam(String name, @Nullable String value, boolean encoded) {
     if (relativeUrl != null) {
       // Do a one-time combination of the built relative URL and the base URL.
       urlBuilder = baseUrl.newBuilder(relativeUrl);
@@ -202,7 +202,7 @@ final class RequestBuilder {
   }
 
   @SuppressWarnings("ConstantConditions") // Only called when isFormEncoded was true.
-  void addFormField(String name, String value, boolean encoded) {
+  public void addFormField(String name, String value, boolean encoded) {
     if (encoded) {
       formBuilder.addEncoded(name, value);
     } else {
@@ -211,20 +211,20 @@ final class RequestBuilder {
   }
 
   @SuppressWarnings("ConstantConditions") // Only called when isMultipart was true.
-  void addPart(Headers headers, RequestBody body) {
+  public void addPart(Headers headers, RequestBody body) {
     multipartBuilder.addPart(headers, body);
   }
 
   @SuppressWarnings("ConstantConditions") // Only called when isMultipart was true.
-  void addPart(MultipartBody.Part part) {
+  public void addPart(MultipartBody.Part part) {
     multipartBuilder.addPart(part);
   }
 
-  void setBody(RequestBody body) {
+  public void setBody(RequestBody body) {
     this.body = body;
   }
 
-  <T> void addTag(Class<T> cls, @Nullable T value) {
+  public <T> void addTag(Class<T> cls, @Nullable T value) {
     requestBuilder.tag(cls, value);
   }
 

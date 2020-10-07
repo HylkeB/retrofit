@@ -37,6 +37,7 @@ import okhttp3.Headers;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
+import okhttp3.Request;
 import okhttp3.RequestBody;
 import retrofit2.http.Body;
 import retrofit2.http.DELETE;
@@ -77,6 +78,7 @@ final class RequestFactory {
   private final boolean isFormEncoded;
   private final boolean isMultipart;
   private final ParameterHandler<?>[] parameterHandlers;
+  private final List<RequestBuilderInterceptor> requestBuilderInterceptors;
   final boolean isKotlinSuspendFunction;
 
   RequestFactory(Builder builder) {
@@ -90,6 +92,7 @@ final class RequestFactory {
     isFormEncoded = builder.isFormEncoded;
     isMultipart = builder.isMultipart;
     parameterHandlers = builder.parameterHandlers;
+    requestBuilderInterceptors = builder.retrofit.requestBuilderInterceptors;
     isKotlinSuspendFunction = builder.isKotlinSuspendFunction;
   }
 
@@ -129,7 +132,12 @@ final class RequestFactory {
       handlers[p].apply(requestBuilder, args[p]);
     }
 
-    return requestBuilder.get().tag(Invocation.class, new Invocation(method, argumentList)).build();
+    Invocation invocation = new Invocation(method, argumentList);
+    Request.Builder rawRequestBuilder = requestBuilder.get().tag(Invocation.class, invocation);
+    for (int i = 0; i < requestBuilderInterceptors.size(); i++) {
+      requestBuilderInterceptors.get(i).intercept(rawRequestBuilder, invocation);
+    }
+    return rawRequestBuilder.build();
   }
 
   /**
@@ -383,7 +391,7 @@ final class RequestFactory {
             || type == String.class
             || type == URI.class
             || (type instanceof Class && "android.net.Uri".equals(((Class<?>) type).getName()))) {
-          return new ParameterHandler.RelativeUrl(method, p);
+          return new BuiltInParameterHandlers.RelativeUrl(method, p);
         } else {
           throw parameterError(
               method,
@@ -416,7 +424,7 @@ final class RequestFactory {
         validatePathName(p, name);
 
         Converter<?, String> converter = retrofit.stringConverter(type, annotations);
-        return new ParameterHandler.Path<>(method, p, name, converter, path.encoded());
+        return new BuiltInParameterHandlers.Path<>(method, p, name, converter, path.encoded());
 
       } else if (annotation instanceof Query) {
         validateResolvableType(p, type);
@@ -439,15 +447,15 @@ final class RequestFactory {
           ParameterizedType parameterizedType = (ParameterizedType) type;
           Type iterableType = Utils.getParameterUpperBound(0, parameterizedType);
           Converter<?, String> converter = retrofit.stringConverter(iterableType, annotations);
-          return new ParameterHandler.Query<>(name, converter, encoded).iterable();
+          return new BuiltInParameterHandlers.Query<>(name, converter, encoded).iterable();
         } else if (rawParameterType.isArray()) {
           Class<?> arrayComponentType = boxIfPrimitive(rawParameterType.getComponentType());
           Converter<?, String> converter =
               retrofit.stringConverter(arrayComponentType, annotations);
-          return new ParameterHandler.Query<>(name, converter, encoded).array();
+          return new BuiltInParameterHandlers.Query<>(name, converter, encoded).array();
         } else {
           Converter<?, String> converter = retrofit.stringConverter(type, annotations);
-          return new ParameterHandler.Query<>(name, converter, encoded);
+          return new BuiltInParameterHandlers.Query<>(name, converter, encoded);
         }
 
       } else if (annotation instanceof QueryName) {
@@ -470,15 +478,15 @@ final class RequestFactory {
           ParameterizedType parameterizedType = (ParameterizedType) type;
           Type iterableType = Utils.getParameterUpperBound(0, parameterizedType);
           Converter<?, String> converter = retrofit.stringConverter(iterableType, annotations);
-          return new ParameterHandler.QueryName<>(converter, encoded).iterable();
+          return new BuiltInParameterHandlers.QueryName<>(converter, encoded).iterable();
         } else if (rawParameterType.isArray()) {
           Class<?> arrayComponentType = boxIfPrimitive(rawParameterType.getComponentType());
           Converter<?, String> converter =
               retrofit.stringConverter(arrayComponentType, annotations);
-          return new ParameterHandler.QueryName<>(converter, encoded).array();
+          return new BuiltInParameterHandlers.QueryName<>(converter, encoded).array();
         } else {
           Converter<?, String> converter = retrofit.stringConverter(type, annotations);
-          return new ParameterHandler.QueryName<>(converter, encoded);
+          return new BuiltInParameterHandlers.QueryName<>(converter, encoded);
         }
 
       } else if (annotation instanceof QueryMap) {
@@ -501,7 +509,7 @@ final class RequestFactory {
         Type valueType = Utils.getParameterUpperBound(1, parameterizedType);
         Converter<?, String> valueConverter = retrofit.stringConverter(valueType, annotations);
 
-        return new ParameterHandler.QueryMap<>(
+        return new BuiltInParameterHandlers.QueryMap<>(
             method, p, valueConverter, ((QueryMap) annotation).encoded());
 
       } else if (annotation instanceof Header) {
@@ -523,20 +531,20 @@ final class RequestFactory {
           ParameterizedType parameterizedType = (ParameterizedType) type;
           Type iterableType = Utils.getParameterUpperBound(0, parameterizedType);
           Converter<?, String> converter = retrofit.stringConverter(iterableType, annotations);
-          return new ParameterHandler.Header<>(name, converter).iterable();
+          return new BuiltInParameterHandlers.Header<>(name, converter).iterable();
         } else if (rawParameterType.isArray()) {
           Class<?> arrayComponentType = boxIfPrimitive(rawParameterType.getComponentType());
           Converter<?, String> converter =
               retrofit.stringConverter(arrayComponentType, annotations);
-          return new ParameterHandler.Header<>(name, converter).array();
+          return new BuiltInParameterHandlers.Header<>(name, converter).array();
         } else {
           Converter<?, String> converter = retrofit.stringConverter(type, annotations);
-          return new ParameterHandler.Header<>(name, converter);
+          return new BuiltInParameterHandlers.Header<>(name, converter);
         }
 
       } else if (annotation instanceof HeaderMap) {
         if (type == Headers.class) {
-          return new ParameterHandler.Headers(method, p);
+          return new BuiltInParameterHandlers.Headers(method, p);
         }
 
         validateResolvableType(p, type);
@@ -557,7 +565,7 @@ final class RequestFactory {
         Type valueType = Utils.getParameterUpperBound(1, parameterizedType);
         Converter<?, String> valueConverter = retrofit.stringConverter(valueType, annotations);
 
-        return new ParameterHandler.HeaderMap<>(method, p, valueConverter);
+        return new BuiltInParameterHandlers.HeaderMap<>(method, p, valueConverter);
 
       } else if (annotation instanceof Field) {
         validateResolvableType(p, type);
@@ -584,15 +592,15 @@ final class RequestFactory {
           ParameterizedType parameterizedType = (ParameterizedType) type;
           Type iterableType = Utils.getParameterUpperBound(0, parameterizedType);
           Converter<?, String> converter = retrofit.stringConverter(iterableType, annotations);
-          return new ParameterHandler.Field<>(name, converter, encoded).iterable();
+          return new BuiltInParameterHandlers.Field<>(name, converter, encoded).iterable();
         } else if (rawParameterType.isArray()) {
           Class<?> arrayComponentType = boxIfPrimitive(rawParameterType.getComponentType());
           Converter<?, String> converter =
               retrofit.stringConverter(arrayComponentType, annotations);
-          return new ParameterHandler.Field<>(name, converter, encoded).array();
+          return new BuiltInParameterHandlers.Field<>(name, converter, encoded).array();
         } else {
           Converter<?, String> converter = retrofit.stringConverter(type, annotations);
-          return new ParameterHandler.Field<>(name, converter, encoded);
+          return new BuiltInParameterHandlers.Field<>(name, converter, encoded);
         }
 
       } else if (annotation instanceof FieldMap) {
@@ -619,7 +627,7 @@ final class RequestFactory {
         Converter<?, String> valueConverter = retrofit.stringConverter(valueType, annotations);
 
         gotField = true;
-        return new ParameterHandler.FieldMap<>(
+        return new BuiltInParameterHandlers.FieldMap<>(
             method, p, valueConverter, ((FieldMap) annotation).encoded());
 
       } else if (annotation instanceof Part) {
@@ -652,7 +660,7 @@ final class RequestFactory {
                   p,
                   "@Part annotation must supply a name or use MultipartBody.Part parameter type.");
             }
-            return ParameterHandler.RawPart.INSTANCE.iterable();
+            return BuiltInParameterHandlers.RawPart.INSTANCE.iterable();
           } else if (rawParameterType.isArray()) {
             Class<?> arrayComponentType = rawParameterType.getComponentType();
             if (!MultipartBody.Part.class.isAssignableFrom(arrayComponentType)) {
@@ -661,9 +669,9 @@ final class RequestFactory {
                   p,
                   "@Part annotation must supply a name or use MultipartBody.Part parameter type.");
             }
-            return ParameterHandler.RawPart.INSTANCE.array();
+            return BuiltInParameterHandlers.RawPart.INSTANCE.array();
           } else if (MultipartBody.Part.class.isAssignableFrom(rawParameterType)) {
-            return ParameterHandler.RawPart.INSTANCE;
+            return BuiltInParameterHandlers.RawPart.INSTANCE;
           } else {
             throw parameterError(
                 method,
@@ -699,7 +707,7 @@ final class RequestFactory {
             }
             Converter<?, RequestBody> converter =
                 retrofit.requestBodyConverter(iterableType, annotations, methodAnnotations);
-            return new ParameterHandler.Part<>(method, p, headers, converter).iterable();
+            return new BuiltInParameterHandlers.Part<>(method, p, headers, converter).iterable();
           } else if (rawParameterType.isArray()) {
             Class<?> arrayComponentType = boxIfPrimitive(rawParameterType.getComponentType());
             if (MultipartBody.Part.class.isAssignableFrom(arrayComponentType)) {
@@ -711,7 +719,7 @@ final class RequestFactory {
             }
             Converter<?, RequestBody> converter =
                 retrofit.requestBodyConverter(arrayComponentType, annotations, methodAnnotations);
-            return new ParameterHandler.Part<>(method, p, headers, converter).array();
+            return new BuiltInParameterHandlers.Part<>(method, p, headers, converter).array();
           } else if (MultipartBody.Part.class.isAssignableFrom(rawParameterType)) {
             throw parameterError(
                 method,
@@ -721,7 +729,7 @@ final class RequestFactory {
           } else {
             Converter<?, RequestBody> converter =
                 retrofit.requestBodyConverter(type, annotations, methodAnnotations);
-            return new ParameterHandler.Part<>(method, p, headers, converter);
+            return new BuiltInParameterHandlers.Part<>(method, p, headers, converter);
           }
         }
 
@@ -761,7 +769,7 @@ final class RequestFactory {
             retrofit.requestBodyConverter(valueType, annotations, methodAnnotations);
 
         PartMap partMap = (PartMap) annotation;
-        return new ParameterHandler.PartMap<>(method, p, valueConverter, partMap.encoding());
+        return new BuiltInParameterHandlers.PartMap<>(method, p, valueConverter, partMap.encoding());
 
       } else if (annotation instanceof Body) {
         validateResolvableType(p, type);
@@ -781,7 +789,7 @@ final class RequestFactory {
           throw parameterError(method, e, p, "Unable to create @Body converter for %s", type);
         }
         gotBody = true;
-        return new ParameterHandler.Body<>(method, p, converter);
+        return new BuiltInParameterHandlers.Body<>(method, p, converter);
 
       } else if (annotation instanceof Tag) {
         validateResolvableType(p, type);
@@ -789,8 +797,8 @@ final class RequestFactory {
         Class<?> tagType = Utils.getRawType(type);
         for (int i = p - 1; i >= 0; i--) {
           ParameterHandler<?> otherHandler = parameterHandlers[i];
-          if (otherHandler instanceof ParameterHandler.Tag
-              && ((ParameterHandler.Tag) otherHandler).cls.equals(tagType)) {
+          if (otherHandler instanceof BuiltInParameterHandlers.Tag
+              && ((BuiltInParameterHandlers.Tag) otherHandler).cls.equals(tagType)) {
             throw parameterError(
                 method,
                 p,
@@ -802,10 +810,11 @@ final class RequestFactory {
           }
         }
 
-        return new ParameterHandler.Tag<>(tagType);
-      }
+        return new BuiltInParameterHandlers.Tag<>(tagType);
 
-      return null; // Not a Retrofit annotation.
+      } else {
+          return retrofit.parameterHandlers.get(annotation.annotationType());
+      }
     }
 
     private void validateResolvableType(int p, Type type) {

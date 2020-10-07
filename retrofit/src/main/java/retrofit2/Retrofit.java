@@ -16,6 +16,7 @@
 package retrofit2;
 
 import static java.util.Collections.unmodifiableList;
+import static java.util.Collections.unmodifiableMap;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationHandler;
@@ -28,6 +29,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,6 +72,8 @@ public final class Retrofit {
   final HttpUrl baseUrl;
   final List<Converter.Factory> converterFactories;
   final List<CallAdapter.Factory> callAdapterFactories;
+  final List<RequestBuilderInterceptor> requestBuilderInterceptors;
+  final Map<Class<? extends Annotation>, ParameterHandler> parameterHandlers;
   final @Nullable Executor callbackExecutor;
   final boolean validateEagerly;
 
@@ -78,12 +82,16 @@ public final class Retrofit {
       HttpUrl baseUrl,
       List<Converter.Factory> converterFactories,
       List<CallAdapter.Factory> callAdapterFactories,
+      Map<Class<? extends Annotation>, ParameterHandler> parameterHandlers,
+      List<RequestBuilderInterceptor> requestBuilderInterceptors,
       @Nullable Executor callbackExecutor,
       boolean validateEagerly) {
     this.callFactory = callFactory;
     this.baseUrl = baseUrl;
     this.converterFactories = converterFactories; // Copy+unmodifiable at call site.
     this.callAdapterFactories = callAdapterFactories; // Copy+unmodifiable at call site.
+    this.parameterHandlers = parameterHandlers; // Copy+unmodifiable at call site.
+    this.requestBuilderInterceptors = requestBuilderInterceptors; // Copy+unmodifiable at call site.
     this.callbackExecutor = callbackExecutor;
     this.validateEagerly = validateEagerly;
   }
@@ -407,6 +415,20 @@ public final class Retrofit {
   }
 
   /**
+   * TODO
+   */
+  public Map<Class<? extends Annotation>, ParameterHandler> parameterHandlers() {
+    return parameterHandlers;
+  }
+
+  /**
+   * TODO
+   */
+  public List<RequestBuilderInterceptor> requestBuilderInterceptors() {
+    return requestBuilderInterceptors;
+  }
+
+  /**
    * The executor used for {@link Callback} methods on a {@link Call}. This may be {@code null}, in
    * which case callbacks should be made synchronously on the background thread.
    */
@@ -430,6 +452,8 @@ public final class Retrofit {
     private @Nullable HttpUrl baseUrl;
     private final List<Converter.Factory> converterFactories = new ArrayList<>();
     private final List<CallAdapter.Factory> callAdapterFactories = new ArrayList<>();
+    private final Map<Class<? extends Annotation>, ParameterHandler> parameterHandlers = new HashMap<>();
+    private final List<RequestBuilderInterceptor> requestBuilderInterceptors = new ArrayList<>();
     private @Nullable Executor callbackExecutor;
     private boolean validateEagerly;
 
@@ -463,6 +487,8 @@ public final class Retrofit {
         callAdapterFactories.add(retrofit.callAdapterFactories.get(i));
       }
 
+      parameterHandlers.putAll(retrofit.parameterHandlers);
+      requestBuilderInterceptors.addAll(retrofit.requestBuilderInterceptors);
       callbackExecutor = retrofit.callbackExecutor;
       validateEagerly = retrofit.validateEagerly;
     }
@@ -582,6 +608,25 @@ public final class Retrofit {
     }
 
     /**
+     * TODO
+     */
+    public Builder addParameterHandler(Class<? extends Annotation> classToken, ParameterHandler parameterHandler) {
+      parameterHandlers.put(
+              Objects.requireNonNull(classToken, "classToken == null"),
+              Objects.requireNonNull(parameterHandler, "parameterHandler == null")
+      );
+      return this;
+    }
+
+    /**
+     * TODO
+     */
+    public Builder addRequestBuilderInterceptor(RequestBuilderInterceptor requestBuilderInterceptor) {
+      requestBuilderInterceptors.add(Objects.requireNonNull(requestBuilderInterceptor, "requestBuilderInterceptor == null"));
+      return this;
+    }
+
+    /**
      * The executor on which {@link Callback} methods are invoked when returning {@link Call} from
      * your service method.
      *
@@ -648,11 +693,19 @@ public final class Retrofit {
       converterFactories.addAll(this.converterFactories);
       converterFactories.addAll(platform.defaultConverterFactories());
 
+      // Make a defensive copy of the parameter handlers.
+      Map<Class<? extends Annotation>, ParameterHandler> parameterHandlers = new HashMap<>(this.parameterHandlers);
+
+      // Make a defensive copy of the request builder interceptors.
+      List<RequestBuilderInterceptor> requestBuilderInterceptors = new ArrayList<>(this.requestBuilderInterceptors);
+
       return new Retrofit(
           callFactory,
           baseUrl,
           unmodifiableList(converterFactories),
           unmodifiableList(callAdapterFactories),
+          unmodifiableMap(parameterHandlers),
+          unmodifiableList(requestBuilderInterceptors),
           callbackExecutor,
           validateEagerly);
     }
